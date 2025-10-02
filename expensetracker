@@ -1,26 +1,15 @@
 import tkinter as tk
 from tkinter import messagebox, simpledialog, filedialog, ttk
-import json
-import os
+import json, os
+import matplotlib.pyplot as plt
 
 EXPENSE_FILE = "expenses.json"
 
 class ExpenseTracker:
     def __init__(self, root):
         self.root = root
-        self.root.title("Expense Tracker")
-
-        self.root.geometry("600x400")
-        self.expenses = self.load_expenses()
-
-        # Treeview to display expenses
-        columns = ("Category", "Amount")
-        self.tree = ttk.Treeview(root, columns=columns, show="headings")
-        self.tree.heading("Category", text="Category")
-        self.tree.heading("Amount", text="Amount")
-        self.tree.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-=======
-        self.root.geometry("700x450")
+        self.root.title("Expense Tracker with Charts")
+        self.root.geometry("750x500")
         self.expenses = self.load_expenses()
 
         # Filter frame
@@ -32,6 +21,7 @@ class ExpenseTracker:
         self.filter_entry.pack(side=tk.LEFT)
         tk.Button(filter_frame, text="Apply", command=self.apply_filter).pack(side=tk.LEFT, padx=5)
         tk.Button(filter_frame, text="Reset", command=self.reset_filter).pack(side=tk.LEFT, padx=5)
+        tk.Button(filter_frame, text="Show Pie Chart", command=self.show_pie_chart, bg="#add8e6").pack(side=tk.LEFT, padx=5)
 
         # Treeview for expenses
         columns = ("Category", "Amount")
@@ -40,20 +30,9 @@ class ExpenseTracker:
         self.tree.heading("Amount", text="Amount")
         self.tree.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
 
-
         # Buttons frame
         btn_frame = tk.Frame(root)
         btn_frame.pack(pady=5)
-
-
-        tk.Button(btn_frame, text="Add Expense", command=self.add_expense, width=15, bg="#90ee90").grid(row=0, column=0, padx=5)
-        tk.Button(btn_frame, text="Delete Expense", command=self.delete_expense, width=15, bg="#ff7f7f").grid(row=0, column=1, padx=5)
-        tk.Button(btn_frame, text="Export Expenses", command=self.export_expenses, width=15, bg="#add8e6").grid(row=0, column=2, padx=5)
-        tk.Button(btn_frame, text="View Total", command=self.view_total, width=15, bg="#ffb347").grid(row=0, column=3, padx=5)
-
-        self.refresh_treeview()
-
-=======
         tk.Button(btn_frame, text="Add Expense", command=self.add_expense, width=15, bg="#90ee90").grid(row=0, column=0, padx=5)
         tk.Button(btn_frame, text="Edit Expense", command=self.edit_expense, width=15, bg="#ffd700").grid(row=0, column=1, padx=5)
         tk.Button(btn_frame, text="Delete Expense", command=self.delete_expense, width=15, bg="#ff7f7f").grid(row=0, column=2, padx=5)
@@ -63,7 +42,6 @@ class ExpenseTracker:
         self.refresh_treeview()
 
     # Load and save
-
     def load_expenses(self):
         if os.path.exists(EXPENSE_FILE):
             with open(EXPENSE_FILE, "r") as f:
@@ -78,28 +56,6 @@ class ExpenseTracker:
         with open(EXPENSE_FILE, "w") as f:
             json.dump(self.expenses, f, indent=4)
 
-
-    def refresh_treeview(self):
-        # Clear existing
-        for row in self.tree.get_children():
-            self.tree.delete(row)
-        # Insert expenses
-        for exp in self.expenses:
-            self.tree.insert("", tk.END, values=(exp['category'].title(), f"{exp['amount']:.2f}"))
-
-    def add_expense(self):
-        category = simpledialog.askstring("Category", "Enter category (e.g., Food, Transport):", parent=self.root)
-        if not category:
-            return
-        try:
-            amount = float(simpledialog.askstring("Amount", "Enter amount:", parent=self.root))
-            if amount < 0:
-                messagebox.showerror("Error", "Amount cannot be negative!")
-                return
-        except (ValueError, TypeError):
-            messagebox.showerror("Error", "Invalid amount entered!")
-            return
-=======
     # Refresh treeview
     def refresh_treeview(self, filtered=None):
         for row in self.tree.get_children():
@@ -117,19 +73,11 @@ class ExpenseTracker:
             if amount < 0: messagebox.showerror("Error", "Amount cannot be negative!"); return
         except (ValueError, TypeError):
             messagebox.showerror("Error", "Invalid amount entered!"); return
-
         self.expenses.append({"category": category, "amount": amount})
         self.save_expenses()
         self.refresh_treeview()
         messagebox.showinfo("Success", f"Expense added: {category.title()} - {amount:.2f}")
 
-
-    def delete_expense(self):
-        selected = self.tree.selection()
-        if not selected:
-            messagebox.showwarning("Warning", "Select an expense to delete.")
-            return
-=======
     def edit_expense(self):
         selected = self.tree.selection()
         if not selected:
@@ -152,24 +100,16 @@ class ExpenseTracker:
         selected = self.tree.selection()
         if not selected:
             messagebox.showwarning("Warning", "Select an expense to delete."); return
-
         idx = self.tree.index(selected[0])
         removed = self.expenses.pop(idx)
         self.save_expenses()
         self.refresh_treeview()
         messagebox.showinfo("Deleted", f"Removed: {removed['category'].title()} - {removed['amount']:.2f}")
 
-
-    def export_expenses(self):
-        if not self.expenses:
-            messagebox.showinfo("Export", "No expenses to export.")
-            return
-=======
     # Export
     def export_expenses(self):
         if not self.expenses:
             messagebox.showinfo("Export", "No expenses to export."); return
-
         file = filedialog.asksaveasfilename(defaultextension=".txt",
                                             filetypes=[("Text files","*.txt"), ("CSV files","*.csv")])
         if file:
@@ -178,11 +118,6 @@ class ExpenseTracker:
                     f.write(f"{exp['category'].title()} - {exp['amount']:.2f}\n")
             messagebox.showinfo("Exported", f"Expenses exported to {file}")
 
-
-    def view_total(self):
-        total = sum(exp['amount'] for exp in self.expenses)
-        messagebox.showinfo("Total Expenses", f"Total Expenses: {total:.2f}")
-=======
     # Total
     def view_total(self):
         total = sum(exp['amount'] for exp in self.expenses)
@@ -201,6 +136,21 @@ class ExpenseTracker:
         self.filter_var.set("")
         self.refresh_treeview()
 
+    # Pie chart
+    def show_pie_chart(self):
+        if not self.expenses:
+            messagebox.showinfo("Pie Chart", "No expenses to show.")
+            return
+        category_totals = {}
+        for exp in self.expenses:
+            cat = exp['category'].title()
+            category_totals[cat] = category_totals.get(cat, 0) + exp['amount']
+        labels = list(category_totals.keys())
+        sizes = list(category_totals.values())
+        plt.figure(figsize=(6,6))
+        plt.pie(sizes, labels=labels, autopct="%1.1f%%", startangle=140)
+        plt.title("Expenses by Category")
+        plt.show()
 
 
 if __name__ == "__main__":
