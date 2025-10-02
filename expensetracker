@@ -2,6 +2,8 @@ import tkinter as tk
 from tkinter import messagebox, simpledialog, filedialog, ttk
 import json, os
 import matplotlib.pyplot as plt
+from datetime import datetime
+import csv
 
 EXPENSE_FILE = "expenses.json"
 
@@ -9,7 +11,7 @@ class ExpenseTracker:
     def __init__(self, root):
         self.root = root
         self.root.title("Expense Tracker with Charts")
-        self.root.geometry("750x500")
+        self.root.geometry("850x550")
         self.expenses = self.load_expenses()
 
         # Filter frame
@@ -22,12 +24,14 @@ class ExpenseTracker:
         tk.Button(filter_frame, text="Apply", command=self.apply_filter).pack(side=tk.LEFT, padx=5)
         tk.Button(filter_frame, text="Reset", command=self.reset_filter).pack(side=tk.LEFT, padx=5)
         tk.Button(filter_frame, text="Show Pie Chart", command=self.show_pie_chart, bg="#add8e6").pack(side=tk.LEFT, padx=5)
+        tk.Button(filter_frame, text="Show Bar Chart", command=self.show_bar_chart, bg="#dda0dd").pack(side=tk.LEFT, padx=5)
 
         # Treeview for expenses
-        columns = ("Category", "Amount")
+        columns = ("Category", "Amount", "Date")
         self.tree = ttk.Treeview(root, columns=columns, show="headings", selectmode="browse")
-        self.tree.heading("Category", text="Category")
-        self.tree.heading("Amount", text="Amount")
+        self.tree.heading("Category", text="Category", command=lambda: self.sort_tree("Category"))
+        self.tree.heading("Amount", text="Amount", command=lambda: self.sort_tree("Amount"))
+        self.tree.heading("Date", text="Date", command=lambda: self.sort_tree("Date"))
         self.tree.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
 
         # Buttons frame
@@ -38,6 +42,7 @@ class ExpenseTracker:
         tk.Button(btn_frame, text="Delete Expense", command=self.delete_expense, width=15, bg="#ff7f7f").grid(row=0, column=2, padx=5)
         tk.Button(btn_frame, text="Export Expenses", command=self.export_expenses, width=15, bg="#add8e6").grid(row=0, column=3, padx=5)
         tk.Button(btn_frame, text="View Total", command=self.view_total, width=15, bg="#ffb347").grid(row=0, column=4, padx=5)
+        tk.Button(btn_frame, text="Reset All Expenses", command=self.reset_all, width=15, bg="#ff4500").grid(row=0, column=5, padx=5)
 
         self.refresh_treeview()
 
@@ -62,7 +67,7 @@ class ExpenseTracker:
             self.tree.delete(row)
         data = filtered if filtered is not None else self.expenses
         for exp in data:
-            self.tree.insert("", tk.END, values=(exp['category'].title(), f"{exp['amount']:.2f}"))
+            self.tree.insert("", tk.END, values=(exp['category'].title(), f"{exp['amount']:.2f}", exp['date']))
 
     # Add/Edit/Delete
     def add_expense(self):
@@ -73,10 +78,11 @@ class ExpenseTracker:
             if amount < 0: messagebox.showerror("Error", "Amount cannot be negative!"); return
         except (ValueError, TypeError):
             messagebox.showerror("Error", "Invalid amount entered!"); return
-        self.expenses.append({"category": category, "amount": amount})
+        date = datetime.now().strftime("%Y-%m-%d %H:%M")
+        self.expenses.append({"category": category, "amount": amount, "date": date})
         self.save_expenses()
         self.refresh_treeview()
-        messagebox.showinfo("Success", f"Expense added: {category.title()} - {amount:.2f}")
+        messagebox.showinfo("Success", f"Expense added: {category.title()} - {amount:.2f} on {date}")
 
     def edit_expense(self):
         selected = self.tree.selection()
@@ -91,7 +97,7 @@ class ExpenseTracker:
             if amount < 0: messagebox.showerror("Error", "Amount cannot be negative!"); return
         except (ValueError, TypeError):
             messagebox.showerror("Error", "Invalid amount entered!"); return
-        self.expenses[idx] = {"category": category, "amount": amount}
+        self.expenses[idx] = {"category": category, "amount": amount, "date": exp['date']}
         self.save_expenses()
         self.refresh_treeview()
         messagebox.showinfo("Updated", f"Expense updated: {category.title()} - {amount:.2f}")
@@ -110,12 +116,19 @@ class ExpenseTracker:
     def export_expenses(self):
         if not self.expenses:
             messagebox.showinfo("Export", "No expenses to export."); return
-        file = filedialog.asksaveasfilename(defaultextension=".txt",
-                                            filetypes=[("Text files","*.txt"), ("CSV files","*.csv")])
+        file = filedialog.asksaveasfilename(defaultextension=".csv",
+                                            filetypes=[("CSV files","*.csv"), ("Text files","*.txt")])
         if file:
-            with open(file, "w") as f:
-                for exp in self.expenses:
-                    f.write(f"{exp['category'].title()} - {exp['amount']:.2f}\n")
+            if file.endswith(".csv"):
+                with open(file, "w", newline="") as f:
+                    writer = csv.DictWriter(f, fieldnames=["Category","Amount","Date"])
+                    writer.writeheader()
+                    for exp in self.expenses:
+                        writer.writerow(exp)
+            else:
+                with open(file, "w") as f:
+                    for exp in self.expenses:
+                        f.write(f"{exp['category'].title()} - {exp['amount']:.2f} - {exp['date']}\n")
             messagebox.showinfo("Exported", f"Expenses exported to {file}")
 
     # Total
@@ -152,6 +165,43 @@ class ExpenseTracker:
         plt.title("Expenses by Category")
         plt.show()
 
+    # Bar chart
+    def show_bar_chart(self):
+        if not self.expenses:
+            messagebox.showinfo("Bar Chart", "No expenses to show.")
+            return
+        category_totals = {}
+        for exp in self.expenses:
+            cat = exp['category'].title()
+            category_totals[cat] = category_totals.get(cat, 0) + exp['amount']
+        labels = list(category_totals.keys())
+        sizes = list(category_totals.values())
+        plt.figure(figsize=(8,5))
+        plt.bar(labels, sizes, color="#69b3a2")
+        plt.xlabel("Category")
+        plt.ylabel("Amount")
+        plt.title("Expenses by Category")
+        plt.show()
+
+    # Sort Treeview
+    def sort_tree(self, col):
+        reverse = getattr(self, f"_reverse_{col}", False)
+        if col == "Amount":
+            self.expenses.sort(key=lambda x: x['amount'], reverse=reverse)
+        elif col == "Date":
+            self.expenses.sort(key=lambda x: datetime.strptime(x['date'], "%Y-%m-%d %H:%M"), reverse=reverse)
+        else:
+            self.expenses.sort(key=lambda x: x['category'].lower(), reverse=reverse)
+        setattr(self, f"_reverse_{col}", not reverse)
+        self.refresh_treeview()
+
+    # Reset all expenses
+    def reset_all(self):
+        if messagebox.askyesno("Confirm Reset", "Are you sure you want to delete all expenses?"):
+            self.expenses.clear()
+            self.save_expenses()
+            self.refresh_treeview()
+            messagebox.showinfo("Reset", "All expenses have been deleted.")
 
 if __name__ == "__main__":
     root = tk.Tk()
