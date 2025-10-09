@@ -1,41 +1,66 @@
 import tkinter as tk
 from tkinter import messagebox, simpledialog, filedialog, ttk
-import json, os
+import json, os, csv
 import matplotlib.pyplot as plt
-from datetime import datetime
-import csv
 
 EXPENSE_FILE = "expenses.json"
+
 
 class ExpenseTracker:
     def __init__(self, root):
         self.root = root
-        self.root.title("Expense Tracker with Charts")
-        self.root.geometry("850x550")
+        self.root.title("💰 Expense Tracker with Charts")
+        self.root.geometry("800x550")
+        self.root.resizable(False, False)
         self.expenses = self.load_expenses()
 
+        self.create_menu()
         self.create_filter_frame()
         self.create_treeview()
         self.create_buttons()
+        self.create_status_bar()
+
         self.refresh_treeview()
 
-    # UI Components
+    # ---------------------- UI CREATION ---------------------- #
+    def create_menu(self):
+        menubar = tk.Menu(self.root)
+        filemenu = tk.Menu(menubar, tearoff=0)
+        filemenu.add_command(label="Export Expenses", command=self.export_expenses)
+        filemenu.add_separator()
+        filemenu.add_command(label="Exit", command=self.root.quit)
+        menubar.add_cascade(label="File", menu=filemenu)
+
+        helpmenu = tk.Menu(menubar, tearoff=0)
+        helpmenu.add_command(label="About", command=lambda: messagebox.showinfo(
+            "About", "Expense Tracker v2.0\nDeveloped in Python using Tkinter."
+        ))
+        menubar.add_cascade(label="Help", menu=helpmenu)
+
+        self.root.config(menu=menubar)
+
     def create_filter_frame(self):
         filter_frame = tk.Frame(self.root)
-        filter_frame.pack(pady=5)
-        tk.Label(filter_frame, text="Filter by Category:").pack(side=tk.LEFT, padx=5)
+        filter_frame.pack(pady=8)
+        tk.Label(filter_frame, text="🔍 Filter by Category:").pack(side=tk.LEFT, padx=5)
         self.filter_var = tk.StringVar()
-        tk.Entry(filter_frame, textvariable=self.filter_var, width=20).pack(side=tk.LEFT)
+        self.filter_entry = tk.Entry(filter_frame, textvariable=self.filter_var, width=20)
+        self.filter_entry.pack(side=tk.LEFT)
         tk.Button(filter_frame, text="Apply", command=self.apply_filter).pack(side=tk.LEFT, padx=5)
         tk.Button(filter_frame, text="Reset", command=self.reset_filter).pack(side=tk.LEFT, padx=5)
-        tk.Button(filter_frame, text="Pie Chart", command=lambda:self.show_chart('pie'), bg="#add8e6").pack(side=tk.LEFT, padx=5)
-        tk.Button(filter_frame, text="Bar Chart", command=lambda:self.show_chart('bar'), bg="#dda0dd").pack(side=tk.LEFT, padx=5)
+        tk.Button(filter_frame, text="📊 Show Pie Chart", command=self.show_pie_chart, bg="#add8e6").pack(side=tk.LEFT, padx=5)
 
     def create_treeview(self):
-        columns = ("Category", "Amount", "Date")
+        columns = ("Category", "Amount")
+        style = ttk.Style()
+        style.configure("Treeview.Heading", font=("Segoe UI", 10, "bold"))
+        style.configure("Treeview", font=("Segoe UI", 10), rowheight=25)
+
         self.tree = ttk.Treeview(self.root, columns=columns, show="headings", selectmode="browse")
-        for col in columns:
-            self.tree.heading(col, text=col, command=lambda c=col: self.sort_tree(c))
+        self.tree.heading("Category", text="Category")
+        self.tree.heading("Amount", text="Amount")
+        self.tree.column("Category", width=300)
+        self.tree.column("Amount", width=120, anchor=tk.E)
         self.tree.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
 
     def create_buttons(self):
@@ -46,135 +71,155 @@ class ExpenseTracker:
             ("Edit Expense", self.edit_expense, "#ffd700"),
             ("Delete Expense", self.delete_expense, "#ff7f7f"),
             ("Export Expenses", self.export_expenses, "#add8e6"),
-            ("View Total", self.view_total, "#ffb347"),
-            ("Reset All", self.reset_all, "#ff4500")
+            ("View Total", self.view_total, "#ffb347")
         ]
         for i, (text, cmd, color) in enumerate(buttons):
-            tk.Button(btn_frame, text=text, command=cmd, width=15, bg=color).grid(row=0, column=i, padx=5)
+            tk.Button(btn_frame, text=text, command=cmd, width=16, bg=color).grid(row=0, column=i, padx=5)
 
-    # Load & Save
+    def create_status_bar(self):
+        self.status_var = tk.StringVar(value="Total: ₹0.00")
+        status_bar = tk.Label(self.root, textvariable=self.status_var, bd=1, relief=tk.SUNKEN, anchor=tk.E)
+        status_bar.pack(fill=tk.X, side=tk.BOTTOM)
+
+    # ---------------------- DATA HANDLING ---------------------- #
     def load_expenses(self):
         if os.path.exists(EXPENSE_FILE):
             with open(EXPENSE_FILE, "r") as f:
-                try: return json.load(f)
+                try:
+                    return json.load(f)
                 except json.JSONDecodeError:
-                    messagebox.showwarning("Warning", "Corrupted file. Starting fresh.")
+                    messagebox.showwarning("Warning", "Corrupted expense file. Starting fresh.")
+                    return []
         return []
 
     def save_expenses(self):
         with open(EXPENSE_FILE, "w") as f:
             json.dump(self.expenses, f, indent=4)
+        self.update_status()
 
-    # Treeview
-    def refresh_treeview(self, filtered=None):
-        for row in self.tree.get_children(): self.tree.delete(row)
-        data = filtered if filtered is not None else self.expenses
+    # ---------------------- TREEVIEW HANDLING ---------------------- #
+    def refresh_treeview(self, data=None):
+        for row in self.tree.get_children():
+            self.tree.delete(row)
+        data = data if data is not None else self.expenses
+        data = sorted(data, key=lambda x: x["amount"], reverse=True)
         for exp in data:
-            self.tree.insert("", tk.END, values=(exp['category'].title(), f"{exp['amount']:.2f}", exp['date']))
+            self.tree.insert("", tk.END, values=(exp["category"].title(), f"{exp['amount']:.2f}"))
+        self.update_status()
 
-    # Add/Edit/Delete
+    def update_status(self):
+        total = sum(exp['amount'] for exp in self.expenses)
+        self.status_var.set(f"Total: ₹{total:.2f}")
+
+    # ---------------------- CRUD OPERATIONS ---------------------- #
     def add_expense(self):
-        category = simpledialog.askstring("Category", "Enter category:", parent=self.root)
+        category = simpledialog.askstring("Category", "Enter category (e.g., Food, Travel):")
         if not category: return
         try:
-            amount = float(simpledialog.askstring("Amount", "Enter amount:", parent=self.root))
+            amount = float(simpledialog.askstring("Amount", "Enter amount:"))
             if amount < 0: raise ValueError
         except (ValueError, TypeError):
-            messagebox.showerror("Error", "Invalid amount entered!"); return
-        date = datetime.now().strftime("%Y-%m-%d %H:%M")
-        self.expenses.append({"category": category, "amount": amount, "date": date})
-        self.save_expenses(); self.refresh_treeview()
-        messagebox.showinfo("Success", f"Added: {category.title()} - {amount:.2f} on {date}")
+            messagebox.showerror("Error", "Invalid amount entered!")
+            return
+
+        self.expenses.append({"category": category.strip(), "amount": amount})
+        self.save_expenses()
+        self.refresh_treeview()
+        messagebox.showinfo("Added", f"Added: {category.title()} - ₹{amount:.2f}")
 
     def edit_expense(self):
         selected = self.tree.selection()
-        if not selected: messagebox.showwarning("Warning", "Select an expense to edit."); return
+        if not selected:
+            messagebox.showwarning("Warning", "Select an expense to edit.")
+            return
         idx = self.tree.index(selected[0])
         exp = self.expenses[idx]
-        category = simpledialog.askstring("Edit Category", "Enter new category:", initialvalue=exp['category'], parent=self.root)
+
+        category = simpledialog.askstring("Edit Category", "Enter new category:", initialvalue=exp["category"])
         if not category: return
         try:
-            amount = float(simpledialog.askstring("Edit Amount", "Enter new amount:", initialvalue=str(exp['amount']), parent=self.root))
+            amount = float(simpledialog.askstring("Edit Amount", "Enter new amount:", initialvalue=str(exp["amount"])))
             if amount < 0: raise ValueError
         except (ValueError, TypeError):
-            messagebox.showerror("Error", "Invalid amount entered!"); return
-        self.expenses[idx] = {"category": category, "amount": amount, "date": exp['date']}
-        self.save_expenses(); self.refresh_treeview()
-        messagebox.showinfo("Updated", f"Updated: {category.title()} - {amount:.2f}")
+            messagebox.showerror("Error", "Invalid amount entered!")
+            return
+
+        self.expenses[idx] = {"category": category, "amount": amount}
+        self.save_expenses()
+        self.refresh_treeview()
+        messagebox.showinfo("Updated", f"Expense updated: {category.title()} - ₹{amount:.2f}")
 
     def delete_expense(self):
         selected = self.tree.selection()
-        if not selected: messagebox.showwarning("Warning", "Select an expense to delete."); return
+        if not selected:
+            messagebox.showwarning("Warning", "Select an expense to delete.")
+            return
         idx = self.tree.index(selected[0])
-        removed = self.expenses.pop(idx)
-        self.save_expenses(); self.refresh_treeview()
-        messagebox.showinfo("Deleted", f"Removed: {removed['category'].title()} - {removed['amount']:.2f}")
+        exp = self.expenses[idx]
 
-    # Export
+        if not messagebox.askyesno("Confirm Delete", f"Delete {exp['category'].title()} - ₹{exp['amount']:.2f}?"):
+            return
+        self.expenses.pop(idx)
+        self.save_expenses()
+        self.refresh_treeview()
+        messagebox.showinfo("Deleted", "Expense removed successfully.")
+
+    # ---------------------- EXPORTING ---------------------- #
     def export_expenses(self):
-        if not self.expenses: messagebox.showinfo("Export", "No expenses to export."); return
-        file = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV","*.csv"),("Text","*.txt")])
+        if not self.expenses:
+            messagebox.showinfo("Export", "No expenses to export.")
+            return
+        file = filedialog.asksaveasfilename(defaultextension=".csv",
+                                            filetypes=[("CSV files", "*.csv"), ("Text files", "*.txt")])
         if not file: return
-        if file.endswith(".csv"):
-            with open(file,"w",newline="") as f:
-                writer = csv.DictWriter(f, fieldnames=["Category","Amount","Date"])
-                writer.writeheader(); writer.writerows(self.expenses)
-        else:
-            with open(file,"w") as f:
-                for exp in self.expenses: f.write(f"{exp['category'].title()} - {exp['amount']:.2f} - {exp['date']}\n")
+
+        with open(file, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(["Category", "Amount"])
+            for exp in self.expenses:
+                writer.writerow([exp["category"].title(), f"{exp['amount']:.2f}"])
         messagebox.showinfo("Exported", f"Expenses exported to {file}")
 
-    # Total
-    def view_total(self):
-        total = sum(exp['amount'] for exp in self.expenses)
-        messagebox.showinfo("Total Expenses", f"Total Expenses: {total:.2f}")
-
-    # Filter
+    # ---------------------- FILTERING ---------------------- #
     def apply_filter(self):
         category = self.filter_var.get().strip().lower()
-        if not category: messagebox.showwarning("Filter", "Enter a category to filter."); return
-        filtered = [exp for exp in self.expenses if exp['category'].lower() == category]
-        if not filtered: messagebox.showinfo("Filter", "No expenses found for this category.")
+        if not category:
+            messagebox.showwarning("Filter", "Enter a category to filter.")
+            return
+        filtered = [exp for exp in self.expenses if category in exp['category'].lower()]
+        if not filtered:
+            messagebox.showinfo("Filter", "No matching expenses found.")
         self.refresh_treeview(filtered)
 
     def reset_filter(self):
-        self.filter_var.set(""); self.refresh_treeview()
+        self.filter_var.set("")
+        self.refresh_treeview()
 
-    # Charts
-    def show_chart(self, chart_type):
-        if not self.expenses: messagebox.showinfo("Chart", "No expenses to show."); return
+    # ---------------------- CHARTS ---------------------- #
+    def show_pie_chart(self):
+        if not self.expenses:
+            messagebox.showinfo("Pie Chart", "No expenses to show.")
+            return
+
         category_totals = {}
         for exp in self.expenses:
-            cat = exp['category'].title()
-            category_totals[cat] = category_totals.get(cat, 0) + exp['amount']
-        labels, sizes = list(category_totals.keys()), list(category_totals.values())
-        plt.figure(figsize=(6,6) if chart_type=='pie' else (8,5))
-        if chart_type=='pie':
-            plt.pie(sizes, labels=labels, autopct="%1.1f%%", startangle=140)
-            plt.title("Expenses by Category")
-        else:
-            plt.bar(labels, sizes, color="#69b3a2")
-            plt.xlabel("Category"); plt.ylabel("Amount"); plt.title("Expenses by Category")
-        plt.show()
+            cat = exp["category"].title()
+            category_totals[cat] = category_totals.get(cat, 0) + exp["amount"]
 
-    # Sorting
-    def sort_tree(self, col):
-        reverse = getattr(self, f"_reverse_{col}", False)
-        if col=="Amount":
-            self.expenses.sort(key=lambda x:x['amount'], reverse=reverse)
-        elif col=="Date":
-            self.expenses.sort(key=lambda x:datetime.strptime(x['date'],"%Y-%m-%d %H:%M"), reverse=reverse)
-        else:
-            self.expenses.sort(key=lambda x:x['category'].lower(), reverse=reverse)
-        setattr(self, f"_reverse_{col}", not reverse); self.refresh_treeview()
+        labels, sizes = category_totals.keys(), category_totals.values()
+        plt.figure(figsize=(6, 6))
+        plt.pie(sizes, labels=labels, autopct="%1.1f%%", startangle=140)
+        plt.title("Expense Distribution by Category")
+        plt.tight_layout()
+        plt.show(block=False)
 
-    # Reset All
-    def reset_all(self):
-        if messagebox.askyesno("Confirm Reset", "Delete all expenses?"):
-            self.expenses.clear(); self.save_expenses(); self.refresh_treeview()
-            messagebox.showinfo("Reset", "All expenses deleted.")
+    # ---------------------- TOTAL ---------------------- #
+    def view_total(self):
+        total = sum(exp['amount'] for exp in self.expenses)
+        messagebox.showinfo("Total Expenses", f"Total Expenses: ₹{total:.2f}")
+
 
 if __name__ == "__main__":
     root = tk.Tk()
-    app = ExpenseTracker(root)
+    ExpenseTracker(root)
     root.mainloop()
